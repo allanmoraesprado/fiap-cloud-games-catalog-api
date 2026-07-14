@@ -3,6 +3,7 @@ using CatalogApi.Application.Interfaces;
 using CatalogApi.Application.Services;
 using CatalogApi.Infrastructure.Dapper;
 using CatalogApi.Infrastructure.Persistence;
+using CatalogApi.Messaging;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -25,6 +26,10 @@ public static class DependencyInjection
 
         // Read model (Dapper) uses the same PostgreSQL connection.
         services.AddSingleton<IGameQueryService>(_ => new GameQueryService(pgConn));
+
+        // Kafka producer for OrderPlacedEvent.
+        services.Configure<KafkaSettings>(config.GetSection("Kafka"));
+        services.AddSingleton<IEventPublisher, KafkaEventPublisher>();
 
         services.AddHttpContextAccessor();
         services.AddScoped<ICurrentUser, CurrentUser>();

@@ -3,10 +3,12 @@
 Catalog microservice for the FIAP Cloud Games Phase 2 platform. Owns the **game
 catalog** (CRUD) and **user library reads** on the `fcg_catalog` database.
 
-> **Milestone status: M3.** Game CRUD + library **read** endpoints. Validates
-> JWTs issued by UsersAPI using the **same shared secret** (no call to UsersAPI).
-> The purchase flow — `POST /api/library/acquire/{gameId}` producing
-> `OrderPlacedEvent` — is added in M4. Promotions are deferred. No Kubernetes yet.
+> **Milestone status: M4.** Game CRUD + library reads + the **purchase entry
+> point** `POST /api/library/acquire/{gameId}`, which validates the game and
+> **publishes `OrderPlacedEvent`** to `fcg.orders.placed` (consumed by PaymentsAPI).
+> Validates JWTs with the shared secret (no call to UsersAPI). **The game is NOT
+> added to the library yet** — that happens in M5 on approved payment. Promotions
+> deferred. No Kubernetes yet.
 
 Part of the five-repository solution (`users-api`, `catalog-api`,
 `payments-api`, `notifications-api`, `orchestration`).
@@ -41,6 +43,7 @@ xUnit/Moq/FluentAssertions. Single-project layout with internal folders.
 | POST | `/api/games` | Admin | Create → 201 |
 | PUT | `/api/games/{id}` | Admin | Update |
 | DELETE | `/api/games/{id}` | Admin | Soft delete (`IsActive=false`) → 204 |
+| POST | `/api/library/acquire/{gameId}` | Authenticated | Start purchase → **202** `{ orderId, status }`; publishes `OrderPlacedEvent` (no library write) |
 | GET | `/api/library/my-games` | Authenticated | Caller's library |
 | GET | `/api/library/user/{userId}` | Admin | A user's library |
 | GET | `/health` | public | Liveness |

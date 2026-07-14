@@ -13,7 +13,15 @@ public class LibraryController : ControllerBase
     private readonly ILibraryService _library;
     public LibraryController(ILibraryService library) => _library = library;
 
-    // Read-only in M3. POST acquire/{gameId} (the purchase producer) is added in M4.
+    // Starts the asynchronous purchase: publishes OrderPlacedEvent and returns 202.
+    // The game is NOT added to the library here (that happens in M5 on approved payment).
+    [HttpPost("acquire/{gameId:guid}")]
+    [ProducesResponseType(typeof(OrderPlacedResponse), StatusCodes.Status202Accepted)]
+    public async Task<ActionResult<OrderPlacedResponse>> Acquire(Guid gameId, CancellationToken ct)
+    {
+        var result = await _library.AcquireAsync(gameId, ct);
+        return Accepted(result);
+    }
 
     [HttpGet("my-games")]
     public async Task<ActionResult<IReadOnlyList<UserGameResponse>>> MyGames(CancellationToken ct)
