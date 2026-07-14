@@ -3,11 +3,13 @@
 Catalog microservice for the FIAP Cloud Games Phase 2 platform. Owns the **game
 catalog** (CRUD) and **user library reads** on the `fcg_catalog` database.
 
-> **Milestone status: M5.** The purchase loop is complete. `POST /api/library/acquire/{gameId}`
-> publishes `OrderPlacedEvent` (409 if already owned); CatalogAPI **consumes
-> `PaymentProcessedEvent`** (group `catalog-service`) and, on **Approved**, writes
-> `user_games` idempotently so `my-games` reflects the purchase. Validates JWTs with
-> the shared secret (no call to UsersAPI). Promotions deferred. No Kubernetes yet.
+Independent .NET 8 API. Owns `fcg_catalog` (games + user library) and orchestrates
+purchases: `POST /api/library/acquire/{gameId}` publishes **`OrderPlacedEvent`**
+(409 if already owned), and CatalogAPI **consumes `PaymentProcessedEvent`** (group
+`catalog-service`) to add the game to the library idempotently on approval.
+Validates JWTs with the shared secret (no call to UsersAPI). Runs via Docker Compose
+and on local Kubernetes (see `k8s/`); for the full system runbook and architecture
+docs, see the **`fiap-cloud-games-orchestration`** repository.
 
 ### Events
 
