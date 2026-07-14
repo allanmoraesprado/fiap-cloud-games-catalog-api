@@ -3,12 +3,21 @@
 Catalog microservice for the FIAP Cloud Games Phase 2 platform. Owns the **game
 catalog** (CRUD) and **user library reads** on the `fcg_catalog` database.
 
-> **Milestone status: M4.** Game CRUD + library reads + the **purchase entry
-> point** `POST /api/library/acquire/{gameId}`, which validates the game and
-> **publishes `OrderPlacedEvent`** to `fcg.orders.placed` (consumed by PaymentsAPI).
-> Validates JWTs with the shared secret (no call to UsersAPI). **The game is NOT
-> added to the library yet** — that happens in M5 on approved payment. Promotions
-> deferred. No Kubernetes yet.
+> **Milestone status: M5.** The purchase loop is complete. `POST /api/library/acquire/{gameId}`
+> publishes `OrderPlacedEvent` (409 if already owned); CatalogAPI **consumes
+> `PaymentProcessedEvent`** (group `catalog-service`) and, on **Approved**, writes
+> `user_games` idempotently so `my-games` reflects the purchase. Validates JWTs with
+> the shared secret (no call to UsersAPI). Promotions deferred. No Kubernetes yet.
+
+### Events
+
+| Direction | Event | Topic | Group / Key |
+|---|---|---|---|
+| Produce | `OrderPlacedEvent` | `fcg.orders.placed` | key `OrderId` |
+| Consume | `PaymentProcessedEvent` | `fcg.payments.processed` | group `catalog-service` |
+
+On `Approved` the game is added to `user_games` (idempotent via the unique
+`(UserId, GameId)` index); on `Rejected` nothing is written.
 
 Part of the five-repository solution (`users-api`, `catalog-api`,
 `payments-api`, `notifications-api`, `orchestration`).
@@ -43,7 +52,7 @@ xUnit/Moq/FluentAssertions. Single-project layout with internal folders.
 | POST | `/api/games` | Admin | Create → 201 |
 | PUT | `/api/games/{id}` | Admin | Update |
 | DELETE | `/api/games/{id}` | Admin | Soft delete (`IsActive=false`) → 204 |
-| POST | `/api/library/acquire/{gameId}` | Authenticated | Start purchase → **202** `{ orderId, status }`; publishes `OrderPlacedEvent` (no library write) |
+| POST | `/api/library/acquire/{gameId}` | Authenticated | Start purchase → **202** `{ orderId, status }`; **409** if already owned; publishes `OrderPlacedEvent` |
 | GET | `/api/library/my-games` | Authenticated | Caller's library |
 | GET | `/api/library/user/{userId}` | Admin | A user's library |
 | GET | `/health` | public | Liveness |

@@ -12,6 +12,7 @@ public class LibraryService : ILibraryService
     private readonly ICurrentUser _currentUser;
     private readonly IGameQueryService _gameQueries;
     private readonly IGameRepository _games;
+    private readonly IUserGameRepository _userGames;
     private readonly IEventPublisher _publisher;
     private readonly KafkaSettings _kafka;
 
@@ -19,12 +20,14 @@ public class LibraryService : ILibraryService
         ICurrentUser currentUser,
         IGameQueryService gameQueries,
         IGameRepository games,
+        IUserGameRepository userGames,
         IEventPublisher publisher,
         IOptions<KafkaSettings> kafkaOptions)
     {
         _currentUser = currentUser;
         _gameQueries = gameQueries;
         _games = games;
+        _userGames = userGames;
         _publisher = publisher;
         _kafka = kafkaOptions.Value;
     }
@@ -39,9 +42,12 @@ public class LibraryService : ILibraryService
         if (!game.IsActive)
             throw new DomainException("Game is not active.");
 
+        // Owns-check: don't start a purchase (or pay) for a game the user already owns.
+        if (await _userGames.ExistsAsync(userId, gameId, ct))
+            throw new ConflictException("Game already in user library.");
+
         // Start the asynchronous purchase: publish an order with the price read from our own
-        // database. The library is NOT written here; that happens in M5 when CatalogAPI
-        // consumes the approved PaymentProcessedEvent.
+        // database. The library is written later, when the approved PaymentProcessedEvent is consumed.
         var orderId = Guid.NewGuid();
         var evt = new OrderPlacedEvent(Guid.NewGuid(), orderId, userId, gameId, game.Price, DateTime.UtcNow);
         await _publisher.PublishAsync(_kafka.OrderPlacedTopic, orderId.ToString(), evt, ct);

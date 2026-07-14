@@ -1,6 +1,7 @@
 using System.Text;
 using CatalogApi.Application.Interfaces;
 using CatalogApi.Application.Services;
+using CatalogApi.Consumers;
 using CatalogApi.Infrastructure.Dapper;
 using CatalogApi.Infrastructure.Persistence;
 using CatalogApi.Messaging;
@@ -21,15 +22,18 @@ public static class DependencyInjection
         services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<CatalogDbContext>());
 
         services.AddScoped<IGameRepository, GameRepository>();
+        services.AddScoped<IUserGameRepository, UserGameRepository>();
         services.AddScoped<IGameService, GameService>();
         services.AddScoped<ILibraryService, LibraryService>();
+        services.AddScoped<IPurchaseCompletionService, PurchaseCompletionService>();
 
         // Read model (Dapper) uses the same PostgreSQL connection.
         services.AddSingleton<IGameQueryService>(_ => new GameQueryService(pgConn));
 
-        // Kafka producer for OrderPlacedEvent.
+        // Kafka: producer for OrderPlacedEvent + consumer for PaymentProcessedEvent.
         services.Configure<KafkaSettings>(config.GetSection("Kafka"));
         services.AddSingleton<IEventPublisher, KafkaEventPublisher>();
+        services.AddHostedService<PaymentProcessedConsumer>();
 
         services.AddHttpContextAccessor();
         services.AddScoped<ICurrentUser, CurrentUser>();
