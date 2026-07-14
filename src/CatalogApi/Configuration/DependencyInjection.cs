@@ -30,7 +30,6 @@ public static class DependencyInjection
         // Read model (Dapper) uses the same PostgreSQL connection.
         services.AddSingleton<IGameQueryService>(_ => new GameQueryService(pgConn));
 
-        // Kafka: producer for OrderPlacedEvent + consumer for PaymentProcessedEvent.
         services.Configure<KafkaSettings>(config.GetSection("Kafka"));
         services.AddSingleton<IEventPublisher, KafkaEventPublisher>();
         services.AddHostedService<PaymentProcessedConsumer>();

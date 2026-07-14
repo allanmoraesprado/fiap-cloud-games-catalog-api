@@ -14,7 +14,7 @@ public class LibraryController : ControllerBase
     public LibraryController(ILibraryService library) => _library = library;
 
     // Starts the asynchronous purchase: publishes OrderPlacedEvent and returns 202.
-    // The game is NOT added to the library here (that happens in M5 on approved payment).
+    // The game is NOT added to the library here (that happens later, on approved payment).
     [HttpPost("acquire/{gameId:guid}")]
     [ProducesResponseType(typeof(OrderPlacedResponse), StatusCodes.Status202Accepted)]
     public async Task<ActionResult<OrderPlacedResponse>> Acquire(Guid gameId, CancellationToken ct)

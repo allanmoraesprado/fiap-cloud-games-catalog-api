@@ -1,6 +1,5 @@
 namespace CatalogApi.Contracts;
 
-// Canonical reference: orchestration/contracts/README.md (mirrored copy).
 public record OrderPlacedEvent(
     Guid EventId,
     Guid OrderId,
