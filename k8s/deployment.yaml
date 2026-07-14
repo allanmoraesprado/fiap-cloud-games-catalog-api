@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog-api
+  namespace: fcg
+  labels:
+    app: catalog-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: catalog-api
+  template:
+    metadata:
+      labels:
+        app: catalog-api
+    spec:
+      containers:
+        - name: catalog-api
+          image: fcg-catalog-api:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: fcg-config          # shared: Jwt issuer/audience, Kafka bootstrap
+            - configMapRef:
+                name: catalog-api-config   # this service's topics + consumer group
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: fcg-secret
+                  key: Postgres__Password
+            - name: ConnectionStrings__Postgres
+              value: "Host=postgres;Port=5432;Database=fcg_catalog;Username=fcg;Password=$(POSTGRES_PASSWORD)"
+            # SAME shared secret as users-api -> validates its JWTs.
+            - name: Jwt__SecretKey
+              valueFrom:
+                secretKeyRef:
+                  name: fcg-secret
+                  key: Jwt__SecretKey
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 15
