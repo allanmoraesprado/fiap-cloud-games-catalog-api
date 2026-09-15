@@ -114,6 +114,26 @@ the Dapper read model, `CacheKeys`), invalidation in `GameService` and
 
 ---
 
+## Metrics (Phase 3)
+
+`GET /metrics` (direct port only, not routed by Kong) exposes the default HTTP metrics from
+`prometheus-net.AspNetCore` plus custom counters with low-cardinality labels only (no user,
+game or order ids):
+
+| Metric | Labels | Meaning |
+|---|---|---|
+| `fcg_events_published_total` | `topic`, `result` | `OrderPlacedEvent` publications |
+| `fcg_events_consumed_total` | `topic`, `result` = `processed` \| `malformed` | `PaymentProcessedEvent` consumption |
+| `fcg_catalog_payments_consumed_total` | `status` = `approved` \| `rejected` \| `other` | Payment events by status |
+| `fcg_catalog_library_grants_total` | `result` = `added` \| `already_owned` \| `duplicate` \| `rejected` | Library grant outcomes |
+| `fcg_cache_requests_total` | `outcome` = `hit` \| `miss` \| `bypass` | Cached reads |
+| `fcg_cache_invalidations_total` | `target` = `games` \| `game` \| `library` | Cache invalidations |
+
+Scraped by Prometheus and shown in the Grafana "FCG Overview" dashboard (orchestration repo,
+`docs/observability.md`).
+
+---
+
 ## Run locally (uses the M0 Postgres)
 
 1. Start the infrastructure (orchestration repo): `docker compose up -d` (includes Redis; if

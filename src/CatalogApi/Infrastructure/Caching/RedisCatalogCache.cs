@@ -1,5 +1,6 @@
 using System.Text.Json;
 using CatalogApi.Application.Interfaces;
+using CatalogApi.Observability;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -41,6 +42,7 @@ public sealed class RedisCatalogCache : ICatalogCache
         {
             _logger.LogWarning(ex, "Cache BYPASS for {Key}: Redis unavailable, serving from the database.", key);
             _outcome.Record(CacheOutcome.Bypass);
+            FcgMetrics.CacheRequests.WithLabels("bypass").Inc();
             return await factory(ct);
         }
 
@@ -53,6 +55,7 @@ public sealed class RedisCatalogCache : ICatalogCache
                 {
                     _logger.LogInformation("Cache HIT for {Key}.", key);
                     _outcome.Record(CacheOutcome.Hit);
+                    FcgMetrics.CacheRequests.WithLabels("hit").Inc();
                     return hit;
                 }
             }
@@ -64,6 +67,7 @@ public sealed class RedisCatalogCache : ICatalogCache
 
         _logger.LogInformation("Cache MISS for {Key}; loading from the database.", key);
         _outcome.Record(CacheOutcome.Miss);
+        FcgMetrics.CacheRequests.WithLabels("miss").Inc();
         var value = await factory(ct);
 
         try
@@ -88,6 +92,7 @@ public sealed class RedisCatalogCache : ICatalogCache
         try
         {
             await _cache.RemoveAsync(key, ct);
+            FcgMetrics.CacheInvalidations.WithLabels(CacheKeys.TargetOf(key)).Inc();
             _logger.LogInformation("Cache INVALIDATED {Key}.", key);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

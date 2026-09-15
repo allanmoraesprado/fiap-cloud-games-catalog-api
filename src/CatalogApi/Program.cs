@@ -1,6 +1,8 @@
 using CatalogApi.Configuration;
 using CatalogApi.Infrastructure.Persistence;
 using CatalogApi.Middleware;
+using CatalogApi.Observability;
+using Prometheus;
 using Serilog;
 
 // Keeps Npgsql DateTime handling compatible with the domain model.
@@ -37,6 +39,10 @@ app.UseMiddleware<GlobalExceptionMiddleware>();
 app.UseMiddleware<CacheOutcomeHeaderMiddleware>();
 app.UseSerilogRequestLogging();
 
+// Prometheus (Phase 3): default HTTP request metrics + custom counters on /metrics.
+FcgMetrics.EnsureInitialized();
+app.UseHttpMetrics();
+
 app.UseSwagger();
 app.UseSwaggerUI();
 
@@ -45,6 +51,7 @@ app.UseAuthorization();
 
 app.MapControllers();
 app.MapHealthChecks("/health");
+app.MapMetrics();
 
 app.Run();
 

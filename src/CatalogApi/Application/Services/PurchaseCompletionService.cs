@@ -2,6 +2,7 @@ using CatalogApi.Application.Interfaces;
 using CatalogApi.Contracts;
 using CatalogApi.Domain;
 using CatalogApi.Infrastructure.Caching;
+using CatalogApi.Observability;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Npgsql;
@@ -31,8 +32,11 @@ public class PurchaseCompletionService : IPurchaseCompletionService
 
     public async Task CompleteAsync(PaymentProcessedEvent evt, CancellationToken ct = default)
     {
+        FcgMetrics.PaymentsConsumed.WithLabels(FcgMetrics.StatusLabel(evt.Status)).Inc();
+
         if (!string.Equals(evt.Status, Approved, StringComparison.OrdinalIgnoreCase))
         {
+            FcgMetrics.LibraryGrants.WithLabels("rejected").Inc();
             _logger.LogInformation("Payment {Status} for order {OrderId}; not adding to library.", evt.Status, evt.OrderId);
             return;
         }
@@ -40,6 +44,7 @@ public class PurchaseCompletionService : IPurchaseCompletionService
         // Idempotency #1: skip if already owned (handles duplicate approved events + re-delivery).
         if (await _userGames.ExistsAsync(evt.UserId, evt.GameId, ct))
         {
+            FcgMetrics.LibraryGrants.WithLabels("already_owned").Inc();
             _logger.LogInformation("User {UserId} already owns game {GameId}; skipping (idempotent).", evt.UserId, evt.GameId);
             return;
         }
@@ -48,11 +53,13 @@ public class PurchaseCompletionService : IPurchaseCompletionService
         {
             await _userGames.AddAsync(new UserGame(evt.UserId, evt.GameId), ct);
             await _uow.SaveChangesAsync(ct);
+            FcgMetrics.LibraryGrants.WithLabels("added").Inc();
             _logger.LogInformation("Added game {GameId} to user {UserId} library (order {OrderId}).", evt.GameId, evt.UserId, evt.OrderId);
         }
         catch (DbUpdateException ex) when (IsUniqueViolation(ex))
         {
             // Idempotency #2: the unique (UserId, GameId) index is authoritative under races.
+            FcgMetrics.LibraryGrants.WithLabels("duplicate").Inc();
             _logger.LogInformation("Duplicate approved payment for user {UserId} game {GameId}; already owned (idempotent).", evt.UserId, evt.GameId);
         }
 

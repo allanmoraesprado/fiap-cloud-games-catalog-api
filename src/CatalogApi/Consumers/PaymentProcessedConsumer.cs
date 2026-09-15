@@ -3,6 +3,7 @@ using Confluent.Kafka;
 using CatalogApi.Application.Interfaces;
 using CatalogApi.Contracts;
 using CatalogApi.Messaging;
+using CatalogApi.Observability;
 using Microsoft.Extensions.Options;
 
 namespace CatalogApi.Consumers;
@@ -63,10 +64,12 @@ public class PaymentProcessedConsumer : BackgroundService
                         using var scope = _scopeFactory.CreateScope();
                         var handler = scope.ServiceProvider.GetRequiredService<IPurchaseCompletionService>();
                         await handler.CompleteAsync(evt, stoppingToken);
+                        FcgMetrics.EventsConsumed.WithLabels(_settings.PaymentProcessedTopic, "processed").Inc();
                     }
                 }
                 catch (JsonException ex)
                 {
+                    FcgMetrics.EventsConsumed.WithLabels(_settings.PaymentProcessedTopic, "malformed").Inc();
                     _logger.LogWarning(ex, "Malformed PaymentProcessedEvent; skipping message.");
                 }
 

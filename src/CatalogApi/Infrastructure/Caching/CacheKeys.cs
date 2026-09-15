@@ -10,4 +10,11 @@ public static class CacheKeys
     public const string ActiveGames = "games:active";
     public static string Game(Guid gameId) => $"game:{gameId}";
     public static string Library(Guid userId) => $"library:{userId}";
+
+    // Bounded label value for metrics (never the id part of the key).
+    public static string TargetOf(string key) =>
+        key == ActiveGames ? "games"
+        : key.StartsWith("game:", StringComparison.Ordinal) ? "game"
+        : key.StartsWith("library:", StringComparison.Ordinal) ? "library"
+        : "other";
 }

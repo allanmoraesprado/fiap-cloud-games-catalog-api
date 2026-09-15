@@ -1,4 +1,5 @@
 using CatalogApi.Application.Interfaces;
+using CatalogApi.Observability;
 
 namespace CatalogApi.Infrastructure.Caching;
 
@@ -13,6 +14,7 @@ public sealed class NoOpCatalogCache : ICatalogCache
     public Task<T> GetOrCreateAsync<T>(string key, Func<CancellationToken, Task<T>> factory, CancellationToken ct = default)
     {
         _outcome.Record(CacheOutcome.Bypass);
+        FcgMetrics.CacheRequests.WithLabels("bypass").Inc();
         return factory(ct);
     }
 
