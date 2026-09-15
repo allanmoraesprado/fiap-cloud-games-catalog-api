@@ -21,8 +21,10 @@ docs, see the **`fiap-cloud-games-orchestration`** repository.
 On `Approved` the game is added to `user_games` (idempotent via the unique
 `(UserId, GameId)` index); on `Rejected` nothing is written.
 
-Part of the five-repository solution (`users-api`, `catalog-api`,
-`payments-api`, `notifications-api`, `orchestration`).
+Part of the six-repository solution (`users-api`, `catalog-api`, `payments-api`,
+`notifications-function`, `notifications-api` [Phase 2 history], `orchestration`). In Phase 3
+it is reached through the **Kong API Gateway** (`/api/games/*` and `/api/library/*`
+JWT-protected at the edge and here).
 
 ---
 
