@@ -2,6 +2,7 @@ using CatalogApi.Application.Dtos.Games;
 using CatalogApi.Application.Interfaces;
 using CatalogApi.Domain;
 using CatalogApi.Domain.Exceptions;
+using CatalogApi.Infrastructure.Caching;
 using Microsoft.Extensions.Logging;
 
 namespace CatalogApi.Application.Services;
@@ -11,17 +12,20 @@ public class GameService : IGameService
     private readonly IGameRepository _games;
     private readonly IUnitOfWork _uow;
     private readonly ICurrentUser _currentUser;
+    private readonly ICatalogCache _cache;
     private readonly ILogger<GameService> _logger;
 
     public GameService(
         IGameRepository games,
         IUnitOfWork uow,
         ICurrentUser currentUser,
+        ICatalogCache cache,
         ILogger<GameService> logger)
     {
         _games = games;
         _uow = uow;
         _currentUser = currentUser;
+        _cache = cache;
         _logger = logger;
     }
 
@@ -32,6 +36,9 @@ public class GameService : IGameService
         await _games.AddAsync(game, ct);
         await _uow.SaveChangesAsync(ct);
         _logger.LogInformation("Game created: {Title}", game.Title);
+
+        // A new active game changes the public list.
+        await _cache.RemoveAsync(CacheKeys.ActiveGames, ct);
         return Map(game);
     }
 
@@ -42,6 +49,8 @@ public class GameService : IGameService
         game.Update(request.Title, request.Description, request.Genre, request.Price, request.ReleaseDate);
         await _games.UpdateAsync(game, ct);
         await _uow.SaveChangesAsync(ct);
+
+        await InvalidateGameAsync(id, ct);
         return Map(game);
     }
 
@@ -52,12 +61,24 @@ public class GameService : IGameService
         game.Deactivate();
         await _games.UpdateAsync(game, ct);
         await _uow.SaveChangesAsync(ct);
+
+        await InvalidateGameAsync(id, ct);
     }
 
-    public async Task<GameResponse> GetAsync(Guid id, CancellationToken ct = default)
+    // Cache-aside: served from Redis while valid; a NotFoundException thrown by the loader is
+    // never cached (no negative caching).
+    public Task<GameResponse> GetAsync(Guid id, CancellationToken ct = default)
+        => _cache.GetOrCreateAsync(CacheKeys.Game(id), async c =>
+        {
+            var game = await _games.GetByIdAsync(id, c) ?? throw new NotFoundException("Game not found.");
+            return Map(game);
+        }, ct);
+
+    // Explicit invalidation for admin writes: the public list and the game entry itself.
+    private async Task InvalidateGameAsync(Guid id, CancellationToken ct)
     {
-        var game = await _games.GetByIdAsync(id, ct) ?? throw new NotFoundException("Game not found.");
-        return Map(game);
+        await _cache.RemoveAsync(CacheKeys.ActiveGames, ct);
+        await _cache.RemoveAsync(CacheKeys.Game(id), ct);
     }
 
     public async Task<IReadOnlyList<GameResponse>> ListAsync(CancellationToken ct = default)

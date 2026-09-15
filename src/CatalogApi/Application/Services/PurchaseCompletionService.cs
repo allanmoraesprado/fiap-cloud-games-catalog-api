@@ -1,6 +1,7 @@
 using CatalogApi.Application.Interfaces;
 using CatalogApi.Contracts;
 using CatalogApi.Domain;
+using CatalogApi.Infrastructure.Caching;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Npgsql;
@@ -13,15 +14,18 @@ public class PurchaseCompletionService : IPurchaseCompletionService
 
     private readonly IUserGameRepository _userGames;
     private readonly IUnitOfWork _uow;
+    private readonly ICatalogCache _cache;
     private readonly ILogger<PurchaseCompletionService> _logger;
 
     public PurchaseCompletionService(
         IUserGameRepository userGames,
         IUnitOfWork uow,
+        ICatalogCache cache,
         ILogger<PurchaseCompletionService> logger)
     {
         _userGames = userGames;
         _uow = uow;
+        _cache = cache;
         _logger = logger;
     }
 
@@ -51,6 +55,10 @@ public class PurchaseCompletionService : IPurchaseCompletionService
             // Idempotency #2: the unique (UserId, GameId) index is authoritative under races.
             _logger.LogInformation("Duplicate approved payment for user {UserId} game {GameId}; already owned (idempotent).", evt.UserId, evt.GameId);
         }
+
+        // The user's library changed (or a concurrent writer changed it): drop the cached listing.
+        // Rejected and already-owned cases return earlier and leave the cache untouched.
+        await _cache.RemoveAsync(CacheKeys.Library(evt.UserId), ct);
     }
 
     private static bool IsUniqueViolation(DbUpdateException ex)

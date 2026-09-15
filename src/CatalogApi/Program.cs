@@ -18,6 +18,7 @@ builder.Host.UseSerilog();
 
 builder.Services.AddControllers();
 builder.Services.AddFcgServices(builder.Configuration);
+builder.Services.AddFcgCache(builder.Configuration);
 builder.Services.AddFcgAuth(builder.Configuration);
 builder.Services.AddFcgSwagger();
 builder.Services.AddHealthChecks();
@@ -33,6 +34,7 @@ using (var scope = app.Services.CreateScope())
 }
 
 app.UseMiddleware<GlobalExceptionMiddleware>();
+app.UseMiddleware<CacheOutcomeHeaderMiddleware>();
 app.UseSerilogRequestLogging();
 
 app.UseSwagger();
