@@ -9,3 +9,10 @@ data:
   Kafka__OrderPlacedTopic: "fcg.orders.placed"
   Kafka__PaymentProcessedTopic: "fcg.payments.processed"
   Kafka__PaymentsConsumerGroup: "catalog-service"
+  # Redis distributed cache (Phase 3): cache-aside for GET /api/games, /api/games/{id}
+  # and the library listings; falls back to PostgreSQL if Redis is unavailable.
+  # `redis` is the Kubernetes Service name (orchestration k8s/redis.yaml).
+  Redis__Enabled: "true"
+  Redis__ConnectionString: "redis:6379,abortConnect=false,connectTimeout=1000,syncTimeout=1000"
+  Redis__DefaultTtlSeconds: "60"
+  Redis__ExposeOutcomeHeader: "true"
