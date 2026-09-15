@@ -63,7 +63,7 @@ Single-project layout with internal folders.
 | GET | `/health` | public | Liveness |
 | GET | `/swagger` | public | Swagger UI |
 
-Seeded: 4 sample games. Library is empty until the purchase flow (M5) writes it.
+Seeded: 4 sample games. Library is empty until the purchase flow writes it.
 
 ---
 
@@ -136,7 +136,7 @@ Scraped by Prometheus and shown in the Grafana "FCG Overview" dashboard (orchest
 
 ---
 
-## Run locally (uses the M0 Postgres)
+## Run locally (uses the Compose Postgres)
 
 1. Start the infrastructure (orchestration repo): `docker compose up -d` (includes Redis; if
    you run without Redis set `Redis__Enabled=false`).
