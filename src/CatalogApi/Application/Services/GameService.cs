@@ -13,6 +13,7 @@ public class GameService : IGameService
     private readonly IUnitOfWork _uow;
     private readonly ICurrentUser _currentUser;
     private readonly ICatalogCache _cache;
+    private readonly IGameSearchSync _search;
     private readonly ILogger<GameService> _logger;
 
     public GameService(
@@ -20,12 +21,14 @@ public class GameService : IGameService
         IUnitOfWork uow,
         ICurrentUser currentUser,
         ICatalogCache cache,
+        IGameSearchSync search,
         ILogger<GameService> logger)
     {
         _games = games;
         _uow = uow;
         _currentUser = currentUser;
         _cache = cache;
+        _search = search;
         _logger = logger;
     }
 
@@ -39,6 +42,7 @@ public class GameService : IGameService
 
         // A new active game changes the public list.
         await _cache.RemoveAsync(CacheKeys.ActiveGames, ct);
+        await _search.TryIndexAsync(game, ct);
         return Map(game);
     }
 
@@ -51,6 +55,7 @@ public class GameService : IGameService
         await _uow.SaveChangesAsync(ct);
 
         await InvalidateGameAsync(id, ct);
+        await _search.TryIndexAsync(game, ct);
         return Map(game);
     }
 
@@ -63,6 +68,8 @@ public class GameService : IGameService
         await _uow.SaveChangesAsync(ct);
 
         await InvalidateGameAsync(id, ct);
+        // Soft delete: the document stays with isActive=false and is filtered out of searches.
+        await _search.TryIndexAsync(game, ct);
     }
 
     // Cache-aside: served from Redis while valid; a NotFoundException thrown by the loader is

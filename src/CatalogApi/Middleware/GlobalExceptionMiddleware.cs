@@ -1,11 +1,14 @@
 using System.Net;
 using System.Text.Json;
+using CatalogApi.Application.Exceptions;
 using CatalogApi.Domain.Exceptions;
 
 namespace CatalogApi.Middleware;
 
 public class GlobalExceptionMiddleware
 {
+    public const int RetryAfterSeconds = 10;
+
     private readonly RequestDelegate _next;
     private readonly ILogger<GlobalExceptionMiddleware> _logger;
 
@@ -31,6 +34,7 @@ public class GlobalExceptionMiddleware
     {
         var (status, message) = ex switch
         {
+            SearchUnavailableException => (HttpStatusCode.ServiceUnavailable, "Search is temporarily unavailable. Please retry shortly."),
             NotFoundException => (HttpStatusCode.NotFound, ex.Message),
             ConflictException => (HttpStatusCode.Conflict, ex.Message),
             ForbiddenException => (HttpStatusCode.Forbidden, ex.Message),
@@ -46,6 +50,8 @@ public class GlobalExceptionMiddleware
 
         context.Response.ContentType = "application/json";
         context.Response.StatusCode = (int)status;
+        if (status == HttpStatusCode.ServiceUnavailable)
+            context.Response.Headers.RetryAfter = RetryAfterSeconds.ToString();
         var payload = JsonSerializer.Serialize(new
         {
             status = (int)status,

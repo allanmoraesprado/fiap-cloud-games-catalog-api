@@ -16,3 +16,9 @@ data:
   Redis__ConnectionString: "redis:6379,abortConnect=false,connectTimeout=1000,syncTimeout=1000"
   Redis__DefaultTtlSeconds: "60"
   Redis__ExposeOutcomeHeader: "true"
+  # Elasticsearch game search (Phase 4): `elasticsearch` is the Kubernetes Service name
+  # (orchestration k8s/elasticsearch.yaml). The index is rebuilt from PostgreSQL by the
+  # reconciliation job, so the local engine needs no persistent volume.
+  Elasticsearch__Enabled: "true"
+  Elasticsearch__Url: "http://elasticsearch:9200"
+  Elasticsearch__IndexName: "fcg-games"

@@ -5,7 +5,10 @@ using CatalogApi.Consumers;
 using CatalogApi.Infrastructure.Caching;
 using CatalogApi.Infrastructure.Dapper;
 using CatalogApi.Infrastructure.Persistence;
+using CatalogApi.Infrastructure.Search;
 using CatalogApi.Messaging;
+using Elastic.Clients.Elasticsearch;
+using Elastic.Transport;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -66,6 +69,49 @@ public static class DependencyInjection
         });
         services.AddScoped<ICatalogCache, RedisCatalogCache>();
         return services;
+    }
+
+    // Search (Elasticsearch): typed client, query service, index writer, sync service and the
+    // reconciliation job. Elasticsearch:Enabled=false keeps the API running without a search
+    // engine (search answers 503, index writes are skipped).
+    public static IServiceCollection AddFcgSearch(this IServiceCollection services, IConfiguration config)
+    {
+        var section = config.GetSection("Elasticsearch");
+        var settings = section.Get<ElasticsearchSettings>() ?? new ElasticsearchSettings();
+        services.Configure<ElasticsearchSettings>(section);
+
+        services.AddScoped<IGameSearchSync>(sp => new GameSearchSync(
+            sp.GetRequiredService<IGameSearchIndexer>(),
+            sp.GetRequiredService<IGameRepository>(),
+            sp.GetRequiredService<ILogger<GameSearchSync>>(),
+            settings.BulkBatchSize));
+
+        if (!settings.Enabled)
+        {
+            services.AddSingleton<DisabledGameSearch>();
+            services.AddSingleton<IGameSearchService>(sp => sp.GetRequiredService<DisabledGameSearch>());
+            services.AddSingleton<IGameSearchIndexer>(sp => sp.GetRequiredService<DisabledGameSearch>());
+            return services;
+        }
+
+        services.AddSingleton(_ => new ElasticsearchClient(BuildClientSettings(settings)));
+        services.AddSingleton<IGameSearchService, ElasticGameSearchService>();
+        services.AddSingleton<IGameSearchIndexer, ElasticGameIndexer>();
+        services.AddHostedService<SearchIndexReconciler>();
+        return services;
+    }
+
+    internal static ElasticsearchClientSettings BuildClientSettings(ElasticsearchSettings settings)
+    {
+        var auth = string.IsNullOrWhiteSpace(settings.ApiKey) ? null : new ApiKey(settings.ApiKey);
+        ElasticsearchClientSettings clientSettings = !string.IsNullOrWhiteSpace(settings.CloudId) && auth is not null
+            ? new ElasticsearchClientSettings(settings.CloudId, auth)
+            : new ElasticsearchClientSettings(new Uri(settings.Url));
+
+        if (auth is not null) clientSettings = clientSettings.Authentication(auth);
+        return clientSettings
+            .DefaultIndex(settings.IndexName)
+            .RequestTimeout(TimeSpan.FromSeconds(Math.Max(1, settings.RequestTimeoutSeconds)));
     }
 
     public static IServiceCollection AddFcgAuth(this IServiceCollection services, IConfiguration config)

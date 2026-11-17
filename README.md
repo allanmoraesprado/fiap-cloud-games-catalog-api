@@ -43,6 +43,7 @@ Guid taken from the JWT — there is **no users table and no cross-service FK**.
 
 .NET 8 · ASP.NET Core (Controllers) · EF Core 8 + Npgsql (write model) · Dapper
 (read model) · **Redis distributed cache** (`IDistributedCache`, cache-aside, Phase 3) ·
+**Elasticsearch 9** game search (`Elastic.Clients.Elasticsearch`, Phase 4) ·
 JWT Bearer (validation only) · Swagger · Serilog · xUnit/Moq/FluentAssertions.
 Single-project layout with internal folders.
 
@@ -53,10 +54,12 @@ Single-project layout with internal folders.
 | Method | Route | Auth | Description |
 |---|---|---|---|
 | GET | `/api/games` | Authenticated | List active games (Dapper) — **cached** |
+| GET | `/api/games/search?q=&genre=&page=&pageSize=` | Authenticated | **Full-text fuzzy search** (Elasticsearch), relevance-ordered, paginated; 400 on invalid input, 503 when the engine is unavailable |
+| POST | `/api/games/search/reindex?recreate=` | Admin | Rebuild the search index from PostgreSQL |
 | GET | `/api/games/{id}` | Authenticated | Get a game — **cached** |
-| POST | `/api/games` | Admin | Create → 201 — invalidates the list cache |
-| PUT | `/api/games/{id}` | Admin | Update — invalidates list + game cache |
-| DELETE | `/api/games/{id}` | Admin | Soft delete (`IsActive=false`) → 204 — invalidates list + game cache |
+| POST | `/api/games` | Admin | Create → 201 — invalidates the list cache, indexes the game |
+| PUT | `/api/games/{id}` | Admin | Update — invalidates list + game cache, re-indexes the game |
+| DELETE | `/api/games/{id}` | Admin | Soft delete (`IsActive=false`) → 204 — invalidates list + game cache, hides it from search |
 | POST | `/api/library/acquire/{gameId}` | Authenticated | Start purchase → **202** `{ orderId, status }`; **409** if already owned; publishes `OrderPlacedEvent` |
 | GET | `/api/library/my-games` | Authenticated | Caller's library — **cached** per user |
 | GET | `/api/library/user/{userId}` | Admin | A user's library — **cached** per user |
@@ -116,6 +119,52 @@ the Dapper read model, `CacheKeys`), invalidation in `GameService` and
 
 ---
 
+## Game search (Phase 4, Elasticsearch)
+
+`GET /api/games/search` answers from a dedicated **Elasticsearch** index (`fcg-games`), never
+from PostgreSQL:
+
+- **Query**: fuzzy `multi_match` (`fuzziness: AUTO`, first letter must match) over `title` (×3),
+  `genre` (×2) and `description`; an exact title phrase/term adds a strong boost, so exact
+  matches rank first while typos such as `Cosmik Odisey` still find *Cosmic Odyssey*. Text is
+  lower-cased and accent-folded (`asciifolding`). Active games only; ordered by `_score`,
+  ties by title.
+- **Input**: `q` 2–100 chars (required), optional `genre` (exact, case-insensitive),
+  `page` ≥ 1, `pageSize` 1–50, at most the first 10 000 results — otherwise **400**.
+- **Response**: `{ query, genre, page, pageSize, total, tookMs, items: [{ id, title, description, genre, price, releaseDate, score }] }`.
+- **Engine unavailable**: **503** with `Retry-After`; `/health` does not depend on the engine,
+  so the rest of the API keeps serving.
+
+**Index synchronization** (PostgreSQL is the source of truth, no distributed transaction):
+
+1. Create/update/delete commit to PostgreSQL first, then upsert the document (best effort,
+   `refresh=wait_for` so the admin reads their own write). A failure is logged and counted, never
+   returned to the caller.
+2. `SearchIndexReconciler` (background job) re-indexes every game whose `UpdatedAt` is newer
+   than its last successful run minus an overlap. The first run — and any run that finds the
+   index missing (e.g. after data loss) — does a **full load**: this is the initial indexing.
+3. `POST /api/games/search/reindex` (Admin) rebuilds everything on demand; `recreate=true`
+   drops the index first (mapping changes).
+
+Soft-deleted games stay in the index with `isActive=false` and are filtered out. Upserts are
+idempotent (document id = game id), so several replicas can run the job concurrently.
+
+| Variable | Meaning | Local default |
+|---|---|---|
+| `Elasticsearch__Enabled` | `false` → search answers 503, index writes skipped | `true` |
+| `Elasticsearch__Url` | Cluster endpoint (`http://elasticsearch:9200` in Compose) | `http://localhost:9200` |
+| `Elasticsearch__CloudId` | Elastic Cloud ID (used instead of the URL when set together with an API key) | empty |
+| `Elasticsearch__ApiKey` | Base64 API key for managed clusters — **secret**, never committed | empty |
+| `Elasticsearch__IndexName` | Index name | `fcg-games` |
+| `Elasticsearch__RequestTimeoutSeconds` | Per-request timeout | `5` |
+| `Elasticsearch__ReconcileIntervalSeconds` / `__ReconcileOverlapSeconds` | Reconciliation period / overlap | `30` / `30` |
+
+Code: `Infrastructure/Search` (`ElasticGameSearchService`, `ElasticGameIndexer` with the index
+mapping, `SearchIndexReconciler`), `Application/Services/GameSearchSync`, validation in
+`Application/Validators/GameSearchValidator`.
+
+---
+
 ## Metrics (Phase 3)
 
 `GET /metrics` (direct port only, not routed by Kong) exposes the default HTTP metrics from
@@ -130,6 +179,9 @@ game or order ids):
 | `fcg_catalog_library_grants_total` | `result` = `added` \| `already_owned` \| `duplicate` \| `rejected` | Library grant outcomes |
 | `fcg_cache_requests_total` | `outcome` = `hit` \| `miss` \| `bypass` | Cached reads |
 | `fcg_cache_invalidations_total` | `target` = `games` \| `game` \| `library` | Cache invalidations |
+| `fcg_search_requests_total` | `outcome` = `results` \| `empty` \| `invalid` \| `unavailable` | Game searches |
+| `fcg_search_duration_seconds` | — | Search round-trip histogram |
+| `fcg_search_index_operations_total` | `operation` = `upsert` \| `bulk` \| `reconcile` \| `reindex`, `result` = `success` \| `failure` | Index writes |
 
 Scraped by Prometheus and shown in the Grafana "FCG Overview" dashboard (orchestration repo,
 `docs/observability.md`).
@@ -138,8 +190,8 @@ Scraped by Prometheus and shown in the Grafana "FCG Overview" dashboard (orchest
 
 ## Run locally (uses the Compose Postgres)
 
-1. Start the infrastructure (orchestration repo): `docker compose up -d` (includes Redis; if
-   you run without Redis set `Redis__Enabled=false`).
+1. Start the infrastructure (orchestration repo): `docker compose up -d` (includes Redis and
+   Elasticsearch; without them set `Redis__Enabled=false` / `Elasticsearch__Enabled=false`).
 2. Run CatalogAPI:
    ```bash
    dotnet run --project src/CatalogApi --urls http://localhost:8082
@@ -152,8 +204,15 @@ Scraped by Prometheus and shown in the Grafana "FCG Overview" dashboard (orchest
 ## Test
 
 ```bash
-dotnet test
+dotnet test                                     # unit + integration
+dotnet test --filter "Category!=Integration"    # unit only (no Docker needed)
+dotnet test --filter "Category=Integration"     # real Elasticsearch through Testcontainers
 ```
+
+Integration tests start a disposable `elasticsearch:9.5.5` container (Docker required; override
+the image with `FCG_TEST_ELASTICSEARCH_IMAGE`) and cover exact, misspelled and relevance-ordered
+searches, empty results, pagination, genre filter, create/update/delete → index, full reindex,
+lost-index recovery and an engine outage followed by recovery.
 
 ## Docker
 

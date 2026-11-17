@@ -36,8 +36,26 @@ public static class FcgMetrics
         "Cache invalidations by target (games|game|library|other).",
         new CounterConfiguration { LabelNames = new[] { "target" } });
 
+    public static readonly Counter SearchRequests = Prometheus.Metrics.CreateCounter(
+        "fcg_search_requests_total",
+        "Game searches by outcome (results|empty|invalid|unavailable).",
+        new CounterConfiguration { LabelNames = new[] { "outcome" } });
+
+    public static readonly Histogram SearchDuration = Prometheus.Metrics.CreateHistogram(
+        "fcg_search_duration_seconds",
+        "Round-trip time of game searches against the search engine.",
+        new HistogramConfiguration { Buckets = Histogram.ExponentialBuckets(0.005, 2, 10) });
+
+    public static readonly Counter SearchIndexOperations = Prometheus.Metrics.CreateCounter(
+        "fcg_search_index_operations_total",
+        "Search index writes by operation (upsert|bulk|reconcile|reindex) and result (success|failure).",
+        new CounterConfiguration { LabelNames = new[] { "operation", "result" } });
+
     static FcgMetrics()
     {
+        foreach (var o in new[] { "results", "empty", "invalid", "unavailable" }) SearchRequests.WithLabels(o);
+        foreach (var op in new[] { "upsert", "bulk", "reconcile", "reindex" })
+            foreach (var r in new[] { "success", "failure" }) SearchIndexOperations.WithLabels(op, r);
         // Pre-create the known label sets so they are exported as 0 before the first event.
         foreach (var s in new[] { "approved", "rejected" }) PaymentsConsumed.WithLabels(s);
         foreach (var r in new[] { "added", "already_owned", "duplicate", "rejected" }) LibraryGrants.WithLabels(r);

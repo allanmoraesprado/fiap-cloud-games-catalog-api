@@ -21,6 +21,7 @@ builder.Host.UseSerilog();
 builder.Services.AddControllers();
 builder.Services.AddFcgServices(builder.Configuration);
 builder.Services.AddFcgCache(builder.Configuration);
+builder.Services.AddFcgSearch(builder.Configuration);
 builder.Services.AddFcgAuth(builder.Configuration);
 builder.Services.AddFcgSwagger();
 builder.Services.AddHealthChecks();
