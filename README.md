@@ -224,3 +224,22 @@ docker run --rm -p 8082:8080 \
   -e Redis__ConnectionString="host.docker.internal:6379,abortConnect=false,connectTimeout=1000,syncTimeout=1000" \
   fcg-catalog-api
 ```
+
+---
+
+## Cloud deployment (Phase 4: AKS + CI/CD)
+
+- **Manifests**: `k8s/azure/` (Deployment, Service, ConfigMap) rendered by the pipeline with the ACR
+  login server and the **commit SHA** as image tag. `k8s/` keeps the local (Docker Desktop) manifests.
+- **Pipeline**: `.github/workflows/ci-cd.yml` calls the shared workflow of the orchestration repository
+  (`dotnet-service.yml`): CI on every push/PR (build, tests, Docker build, Trivy scan); CD on `main` only
+  (OIDC login to Azure, push to the private ACR, rolling update on AKS with automatic rollback, smoke test
+  through the public Kong gateway).
+- **Secrets**: none in the manifests. On AKS the Azure Key Vault CSI driver mounts the service's secrets as
+  files (Workload Identity) and the API loads them as configuration when `SecretsPath` is set
+  (`Configuration/RuntimeConfiguration.cs`; file `Jwt__SecretKey` -> key `Jwt:SecretKey`). Without
+  `SecretsPath` (local runs) nothing changes.
+- **Version**: the image carries `APP_VERSION` (commit SHA); every response has `X-App-Version`.
+- In the cloud the search engine is Elastic Cloud: `Elasticsearch__Url` and `Elasticsearch__ApiKey` are mounted from Key Vault.
+
+Details: orchestration repository, `docs/phase4/` (CICD.md, KEYVAULT.md, PROVISIONING.md).

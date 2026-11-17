@@ -1,0 +1,18 @@
+# Non-sensitive settings of CatalogAPI on AKS. JWT key, PostgreSQL and Redis connection strings
+# and the Elastic Cloud endpoint/API key come from Key Vault (mounted files).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: catalog-api-config
+  namespace: fcg
+data:
+  Kafka__OrderPlacedTopic: "fcg.orders.placed"
+  Kafka__PaymentProcessedTopic: "fcg.payments.processed"
+  Kafka__PaymentsConsumerGroup: "catalog-service"
+  Redis__Enabled: "true"
+  Redis__DefaultTtlSeconds: "60"
+  Redis__ExposeOutcomeHeader: "true"
+  Elasticsearch__Enabled: "true"
+  Elasticsearch__IndexName: "fcg-games"
+  Elasticsearch__RequestTimeoutSeconds: "5"
+  Elasticsearch__ReconcileIntervalSeconds: "30"

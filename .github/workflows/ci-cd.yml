@@ -1,0 +1,24 @@
+# CI on every push and pull request; CD (ACR push + AKS rolling update) on main only.
+# The pipeline itself is the shared, reusable workflow of the orchestration repository.
+name: ci-cd
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# id-token: write lets the CD job request the OIDC token used to log in to Azure; jobs that do
+# not need it (CI) narrow their own permissions to contents: read.
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  pipeline:
+    uses: allanmoraesprado/fiap-cloud-games-orchestration/.github/workflows/dotnet-service.yml@main
+    with:
+      service: catalog-api
+      image: fcg-catalog-api
+      solution: CatalogApi.sln

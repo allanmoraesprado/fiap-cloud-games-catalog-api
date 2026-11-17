@@ -1,0 +1,90 @@
+# catalog-api on AKS. Rendered by the CD pipeline (envsubst): ${ACR_LOGIN_SERVER} and ${IMAGE_TAG} (full
+# commit SHA) - never a mutable tag. Credentials are files mounted from Azure Key Vault by the
+# Secrets Store CSI driver (SecretProviderClass catalog-api-secrets, ServiceAccount catalog-api with Workload
+# Identity; both owned by the orchestration repository, k8s/azure). Rolling updates keep full
+# capacity (maxUnavailable 0) and only route traffic to pods that pass the readiness probe.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog-api
+  namespace: fcg
+  labels:
+    app: catalog-api
+    app.kubernetes.io/name: catalog-api
+    app.kubernetes.io/part-of: fiap-cloud-games
+    app.kubernetes.io/version: "${IMAGE_TAG}"
+  annotations:
+    kubernetes.io/change-cause: "deploy ${IMAGE_TAG}"
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: catalog-api
+  template:
+    metadata:
+      labels:
+        app: catalog-api
+        app.kubernetes.io/version: "${IMAGE_TAG}"
+        azure.workload.identity/use: "true"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: catalog-api
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: catalog-api
+          image: ${ACR_LOGIN_SERVER}/fcg-catalog-api:${IMAGE_TAG}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: fcg-config          # shared: JWT issuer/audience, Kafka bootstrap, SecretsPath
+            - configMapRef:
+                name: catalog-api-config
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              memory: "768Mi"
+          volumeMounts:
+            - name: secrets-store
+              mountPath: /mnt/secrets-store
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          lifecycle:
+            preStop:
+              # Lets the load balancer/Kong stop sending new requests before the process exits.
+              exec:
+                command: ["sleep", "5"]
+      volumes:
+        - name: secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: catalog-api-secrets
